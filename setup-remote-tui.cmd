@@ -57,11 +57,16 @@ try { if (-not $Host.UI.RawUI) { $global:CanReadKey = $false } } catch { $global
 
 function Read-Key {
     try {
-        $k = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        # AllowCtrlC 를 빼면 Ctrl+C 와 Ctrl+Shift+C 가 호스트의 break 로 처리되어
+        # 스크립트가 그 자리에서 죽는다. 키로 받아서 우리가 직접 정리한다.
+        $k = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown,AllowCtrlC')
     } catch {
         $global:CanReadKey = $false
         return 'esc'
     }
+    # Ctrl+C 는 문자 0x03 으로, Ctrl+Break 는 VK_CANCEL(3) 로 들어온다.
+    # Ctrl+Shift+C 도 터미널이 복사로 가로채지 않으면 0x03 으로 도착한다.
+    if ($k.VirtualKeyCode -eq 3 -or $k.Character -eq [char]3) { return 'cancel' }
     switch ($k.VirtualKeyCode) {
         38 { 'up' } 40 { 'down' } 37 { 'left' } 39 { 'right' }
         13 { 'enter' } 27 { 'esc' } 32 { 'space' } 36 { 'home' } 35 { 'end' }
@@ -168,10 +173,12 @@ function Menu-Single {
                       if ($n -lt $Items.Count) { $cur = $n } }
             'home'  { $n = 0; while ($n -lt $Items.Count - 1 -and $Items[$n] -eq '__RULE__') { $n++ }; $cur = $n }
             'end'   { $n = $Items.Count - 1; while ($n -gt 0 -and $Items[$n] -eq '__RULE__') { $n-- }; $cur = $n }
-            'enter' { return $cur }
-            'right' { return $cur }
-            'esc'   { if (-not $NoEsc) { return -1 } }
-            'quit'  { if (-not $NoEsc) { return -1 } }
+            'enter'  { return $cur }
+            'right'  { return $cur }
+            'esc'    { if (-not $NoEsc) { return -1 } }
+            'quit'   { if (-not $NoEsc) { return -1 } }
+            # NoEsc 메뉴에서도 Ctrl+C 는 빠져나갈 수 있어야 한다.
+            'cancel' { Abort-Script }
         }
     }
 }
@@ -199,12 +206,43 @@ function Pause-Key([string]$msg = '계속하려면 아무 키나 누르세요') 
     Write-Host ''
     if ($global:CanReadKey) {
         Write-Host ('   [입력 대기 중] ' + $msg) -ForegroundColor Yellow -NoNewline
-        [void](Read-Key)
+        $k = Read-Key
         Write-Host ''
+        if ($k -eq 'cancel') { Abort-Script }
     } else {
         Write-Host ('   [입력 대기 중] ' + $msg + ' (엔터)') -ForegroundColor Yellow
         [void](Read-Host '   엔터')
     }
+}
+
+# 방화벽을 연 뒤에 중단되면 열린 채로 남는다. 예약 작업이 있어 언젠가는 닫히지만,
+# 지금 닫을 기회를 주고 끝내는 편이 낫다.
+$global:AccessOpened = $false
+
+function Abort-Script {
+    Clear-Host
+    Write-Host ''
+    Warn '사용자가 중단했다. (Ctrl+C)'
+    if ($global:AccessOpened) {
+        Write-Host ''
+        Write-Host '   이 PC 의 22번은 아직 열려 있다. 예약된 시각에 자동으로 닫힌다.'
+        Write-Host ''
+        # 여기서 Read-Key 를 다시 쓰면 Ctrl+C 처리가 재귀한다. 줄 입력으로 받는다.
+        Write-Host '   [입력 대기 중] 지금 닫으려면 c 를 입력하고 엔터, 그냥 두려면 엔터.' -ForegroundColor Yellow
+        $a = Read-Host '   선택'
+        if ($a -match '^\s*[cC]') {
+            Close-Access
+            Remove-CloseTask
+            $global:AccessOpened = $false
+            Ok '접속을 차단했다.'
+        } else {
+            Info '열린 상태로 둔다.'
+        }
+    }
+    Write-Host ''
+    Write-Host '   [입력 대기 중] 창을 닫으려면 엔터를 누르세요.' -ForegroundColor Yellow
+    [void](Read-Host '   엔터')
+    exit 0
 }
 
 # 값 입력. 방향키로 받을 수 없는 항목(인증 키, 계정명)에만 쓴다.
@@ -873,6 +911,8 @@ if ($IsServer) {
     $code = Open-Access
     if ($code -ne 0) { Die ('netsh 방화벽 규칙 추가 실패 (코드 ' + $code + ')') }
     Ok ('인바운드 TCP 22 - ' + $TsRange + ' 에서만 허용')
+    # 이 뒤로 중단되면 열린 채로 남는다. Abort-Script 가 이 값을 보고 정리를 제안한다.
+    $global:AccessOpened = $true
 
     if ($Hours -gt 0) {
         $Expire = (Get-Date).AddHours($Hours)
@@ -1128,6 +1168,7 @@ if ($IsServer) {
         Write-Host ''
         Close-Access
         Remove-CloseTask
+        $global:AccessOpened = $false
         Ok '접속을 차단했다. 이 PC 는 더 이상 접속을 받지 않는다.'
         Info '다시 열려면 이 파일을 또 실행하면 된다.'
     }

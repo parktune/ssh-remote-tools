@@ -90,6 +90,7 @@ Tailscale 은 두 PC 를 같은 가상 네트워크에 묶어 이 문제를 통�
 - CIM 기반 cmdlet(`Get-NetTCPConnection`, `NetSecurity`, `Get-WindowsCapability` 와일드카드 조회)은 모듈 로딩만으로 초 단위를 먹어서 쓰지 않는다.
 - TUI 의 상자 폭은 `.Length` 가 아니라 렌더링 폭으로 계산한다. 한글은 콘솔에서 두 칸을 차지한다.
 - 방향키를 읽을 수 없는 환경에서는 번호 입력 메뉴로 자동 전환된다.
+- `RawUI.ReadKey` 는 반드시 `AllowCtrlC` 와 함께 부른다. 이 옵션이 없으면 Ctrl+C — 그리고 터미널이 복사로 가로채지 않은 Ctrl+Shift+C 도 같은 `0x03` 으로 도착한다 — 가 호스트의 break 로 처리되어 스크립트가 그 자리에서 죽는다. 지금은 중단 요청으로 받아, 방화벽을 이미 열었다면 닫을 기회를 주고 끝낸다.
 
 ## 파일
 
