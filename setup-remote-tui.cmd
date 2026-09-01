@@ -693,23 +693,65 @@ function Register-TsToken([int]$seconds, [string]$desc) {
 }
 
 # 발급된 키를 화면에 크게 띄운다. 상대에게 그대로 전달하면 된다.
+# Set-Clipboard 는 실패해도 예외를 던지지 않는 경우가 있다. 화면에 "복사했다" 고
+# 적어 놓고 실제로는 비어 있으면 최악이므로, 읽어서 확인한 것만 성공으로 친다.
+function Copy-ToClipboard([string]$s) {
+    try {
+        Set-Clipboard -Value $s
+        $back = (Get-Clipboard -ErrorAction Stop) -join "`n"
+        return ($back.Trim() -eq $s.Trim())
+    } catch { return $false }
+}
+
+# 클립보드가 막힌 환경을 위한 탈출구. 마우스 드래그를 하지 않아도 되게 한다.
+function Save-KeyToFile([string]$key) {
+    $p = Join-Path ([Environment]::GetFolderPath('Desktop')) 'tailscale-authkey.txt'
+    Write-Host ''
+    try {
+        Set-Content -Path $p -Value $key -Encoding ASCII
+        Ok ('저장했다: ' + $p)
+        Warn '전달한 뒤에는 이 파일을 지워라. 키가 평문으로 남는다.'
+    } catch {
+        Bad ('저장 실패: ' + $_.Exception.Message)
+    }
+    Pause-Key '아무 키나 누르면 돌아갑니다'
+}
+
 function Show-AuthKey([string]$key, [string]$title, [string]$note) {
-    $copied = $false
-    try { Set-Clipboard -Value $key; $copied = $true } catch {}
-    Clear-Host
-    Write-Host ''
-    Write-Host ('   ' + $title) -ForegroundColor Cyan
-    Write-Host ''
-    Write-Host ('   ' + $note)
-    Write-Host ''
-    # 상자에 넣으면 창이 좁을 때 Vis-Trim 에 잘린다. 잘린 키는 쓸 수 없으므로
-    # 키만은 상자 밖에 그대로 찍는다.
-    Write-Host ('   ' + $key) -ForegroundColor Yellow
-    Write-Host ''
-    Write-Host '   이 키는 1회용이다. 한 번 쓰면 다시 못 쓴다.' -ForegroundColor DarkGray
-    if ($copied) { Write-Host '   클립보드에 복사해 두었다. 그대로 붙여넣으면 된다.' -ForegroundColor DarkGray }
-    else         { Write-Host '   드래그해서 복사한 뒤 상대에게 전달하라.' -ForegroundColor DarkGray }
-    Pause-Key '아무 키나 누르면 계속합니다'
+    while ($true) {
+        $copied = Copy-ToClipboard $key
+        Clear-Host
+        Write-Host ''
+        Write-Host ('   ' + $title) -ForegroundColor Cyan
+        Write-Host ''
+        Write-Host ('   ' + $note)
+        Write-Host ''
+        # 상자에 넣으면 창이 좁을 때 Vis-Trim 에 잘린다. 잘린 키는 쓸 수 없으므로
+        # 키만은 상자 밖에 그대로 찍는다.
+        Write-Host ('   ' + $key) -ForegroundColor Yellow
+        Write-Host ''
+        if ($copied) {
+            Write-Host '   클립보드에 복사됐다. 붙여넣기(Ctrl+V)만 하면 된다.' -ForegroundColor Green
+            Write-Host '   마우스로 긁을 필요 없다.' -ForegroundColor DarkGray
+        } else {
+            Write-Host '   클립보드 복사에 실패했다. s 를 눌러 파일로 저장하라.' -ForegroundColor Yellow
+        }
+        Write-Host ''
+        Write-Host '   이 키는 1회용이다. 한 번 쓰면 다시 못 쓴다.' -ForegroundColor DarkGray
+        Write-Host ''
+        # 콘솔의 QuickEdit 모드는 창을 클릭하거나 드래그하는 순간 선택 모드로 들어가고,
+        # 그 동안 프로그램 출력을 막는다. 멈춘 것처럼 보이는 원인이라 미리 알려 둔다.
+        Write-Host '   창 안을 드래그하면 화면이 멈춘 것처럼 보인다. 콘솔의 선택 모드다.' -ForegroundColor DarkGray
+        Write-Host '   그 상태에서 Enter = 선택 영역 복사, Esc = 취소. 죽은 것이 아니다.' -ForegroundColor DarkGray
+        Write-Host ''
+        Write-Host '   [입력 대기 중]  c = 클립보드에 다시 복사   s = 파일로 저장   Enter = 계속' -ForegroundColor Yellow
+
+        $k = Read-Key
+        if ($k -eq 'cancel') { Abort-Script }
+        if ($k -eq 'c') { continue }
+        if ($k -eq 's') { Save-KeyToFile $key; continue }
+        break
+    }
 }
 
 # 연결에 쓸 인증 키를 얻는다. 브라우저는 어느 경로에서도 열리지 않는다.
@@ -1044,11 +1086,12 @@ try {
     $isMs = ($u.PrincipalSource -eq 'MicrosoftAccount')
 } catch {}
 
-$lines = @()
+$sshCmd = 'ssh ' + $env:USERNAME + '@' + $tsip
+$lines  = @()
 if ($IsServer) {
     $lines += ('사용자 계정 : ' + $env:USERNAME)
     $lines += ''
-    $lines += ('  ssh ' + $env:USERNAME + '@' + $tsip)
+    $lines += ('  ' + $sshCmd)
     $lines += ''
     if ($Expire) {
         $lines += ('접속 허용 : ' + $Expire.ToString('yyyy-MM-dd HH:mm') + ' 까지 (' + $Hours + '시간)')
@@ -1070,6 +1113,15 @@ if ($IsServer) {
 
 Draw-Box -Title '이 PC 의 상태' -Lines $lines -Cursor -1 `
     -Note ($(if ($IsServer) { '  상대에게 알려줄 내용' } else { '  설정 결과' }))
+
+if ($IsServer) {
+    if (Copy-ToClipboard $sshCmd) {
+        Write-Host ''
+        Write-Host '   위 ssh 명령을 클립보드에 복사했다. 붙여넣기로 상대에게 보내면 된다.' -ForegroundColor Green
+    }
+    # 드래그로 긁으려다 콘솔 선택 모드에 걸려 멈춘 줄 아는 경우가 많다.
+    Write-Host '   창 안을 드래그하면 화면이 멈춘 것처럼 보인다. Enter 로 복사, Esc 로 취소.' -ForegroundColor DarkGray
+}
 Pause-Key '아무 키나 누르면 접속 화면으로 넘어갑니다'
 
 # ══════════════════════════════════════════════════════════════
