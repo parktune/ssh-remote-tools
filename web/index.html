@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>원격 접속 설정</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>원격 접속 설정</h1>
+  <div class="sub">OpenSSH + Tailscale · 이 창을 닫아도 설정은 유지됩니다</div>
+  <div id="app"><div class="card">불러오는 중…</div></div>
+  <div class="row" style="margin-top:22px">
+    <button class="danger" onclick="quit()">서버 종료</button>
+    <span class="pill off" id="conn">확인 중</span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/web/app.js"></script>
+</body>
+</html>

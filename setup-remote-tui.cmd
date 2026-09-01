@@ -338,6 +338,8 @@ function Open-Access {
         ('remoteip=' + $TsRange),'profile=any'
     )
     Native 'netsh' @('advfirewall','firewall','set','rule','name=OpenSSH-Server-In-TCP','new','enable=No') | Out-Null
+    # winget/MSI 설치본은 광역 규칙을 다른 이름으로 만든다. 이것도 꺼야 대역 제한이 의미 있다.
+    Native 'netsh' @('advfirewall','firewall','set','rule','name=OpenSSH SSH Server (sshd)','new','enable=No') | Out-Null
     return $code
 }
 
@@ -345,6 +347,8 @@ function Close-Access {
     Native 'netsh' @('advfirewall','firewall','delete','rule',('name=' + $RuleName)) | Out-Null
     Native 'netsh' @('advfirewall','firewall','delete','rule',('name=' + $OldRule))  | Out-Null
     Native 'netsh' @('advfirewall','firewall','set','rule','name=OpenSSH-Server-In-TCP','new','enable=No') | Out-Null
+    # winget/MSI 설치본은 광역 규칙을 다른 이름으로 만든다. 이것도 꺼야 대역 제한이 의미 있다.
+    Native 'netsh' @('advfirewall','firewall','set','rule','name=OpenSSH SSH Server (sshd)','new','enable=No') | Out-Null
 }
 
 function Remove-CloseTask {
@@ -356,7 +360,9 @@ function Remove-CloseTask {
 function Register-CloseTask([datetime]$when) {
     Remove-CloseTask
     $iso       = $when.ToString('yyyy-MM-ddTHH:mm:ss')
-    $netshArgs = 'advfirewall firewall set rule name="' + $RuleName + '" new enable=No'
+    # 비활성화가 아니라 삭제한다. 웹 버전(setup-remote-web.cmd)이 "규칙이 존재하면
+    # 열림"으로 상태를 읽기 때문에, 두 도구가 같은 방식으로 닫아야 한다.
+    $netshArgs = 'advfirewall firewall delete rule name="' + $RuleName + '"'
     $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
