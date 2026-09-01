@@ -1,0 +1,8 @@
+# .cmd 는 CRLF 를 유지해야 한다. cmd.exe 는 LF 뿐인 배치 파일의 if ... ( 블록을
+# 제대로 파싱하지 못해서, 더블클릭하면 창이 즉시 닫힌다.
+#
+# text eol=crlf 가 아니라 -text 를 쓰는 이유:
+# eol=crlf 는 저장소에 LF 로 넣고 checkout 때 CRLF 로 바꾼다. 그러면 clone 은
+# 괜찮지만 GitHub 의 raw 다운로드로 받은 파일은 LF 가 되어 그대로 깨진다.
+# -text 는 EOL 변환을 완전히 끄므로 어느 경로로 받아도 바이트가 같다.
+*.cmd -text

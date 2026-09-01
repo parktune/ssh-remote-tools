@@ -1,0 +1,7 @@
+# 배포용 압축본은 산출물이라 버전 관리하지 않는다
+*.zip
+
+# 스크립트가 만드는 로컬 상태. %LOCALAPPDATA% 에 쓰이지만 실수로 들어오는 것을 막는다
+tsapi.dat
+hosts.txt
+ssh-remote-close.xml
