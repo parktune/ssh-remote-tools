@@ -196,10 +196,21 @@ function Menu-Fallback([string]$Title, [string[]]$Items, [int]$Start) {
     Write-Host ''
     Write-Host '   방향키를 쓸 수 없는 환경이라 번호로 받는다.' -ForegroundColor DarkGray
     Write-Host '   [입력 대기 중] 번호를 입력한 뒤 엔터를 누르세요.' -ForegroundColor Yellow
-    $a = Read-Host ('   번호 (엔터 = ' + ($Start + 1) + ')')
+    $a = Read-Line ('   번호 (엔터 = ' + ($Start + 1) + ')')
     $n = 0
     if ([int]::TryParse($a.Trim(), [ref]$n) -and $n -ge 1 -and $n -le $map.Count) { return $map[$n - 1] }
     return $Start
+}
+
+# Read-Host 도 Ctrl+C 를 break 로 처리해서 스크립트를 죽인다. 줄 입력 동안만
+# 콘솔이 그것을 일반 문자로 넘기게 해 둔다. 복사하려다 Ctrl+Shift+C 를 눌러도
+# 입력에 이상한 글자가 하나 섞일 뿐, 창이 사라지지는 않는다.
+# 자식 프로세스(ssh 등)가 물려받지 않도록 반드시 원래 값으로 되돌린다.
+function Read-Line([string]$prompt) {
+    $old = $false
+    try { $old = [Console]::TreatControlCAsInput; [Console]::TreatControlCAsInput = $true } catch {}
+    try   { return (Read-Host $prompt) }
+    finally { try { [Console]::TreatControlCAsInput = $old } catch {} }
 }
 
 function Pause-Key([string]$msg = '계속하려면 아무 키나 누르세요') {
@@ -211,7 +222,7 @@ function Pause-Key([string]$msg = '계속하려면 아무 키나 누르세요') 
         if ($k -eq 'cancel') { Abort-Script }
     } else {
         Write-Host ('   [입력 대기 중] ' + $msg + ' (엔터)') -ForegroundColor Yellow
-        [void](Read-Host '   엔터')
+        [void](Read-Line '   엔터')
     }
 }
 
@@ -229,7 +240,7 @@ function Abort-Script {
         Write-Host ''
         # 여기서 Read-Key 를 다시 쓰면 Ctrl+C 처리가 재귀한다. 줄 입력으로 받는다.
         Write-Host '   [입력 대기 중] 지금 닫으려면 c 를 입력하고 엔터, 그냥 두려면 엔터.' -ForegroundColor Yellow
-        $a = Read-Host '   선택'
+        $a = Read-Line '   선택'
         if ($a -match '^\s*[cC]') {
             Close-Access
             Remove-CloseTask
@@ -241,7 +252,7 @@ function Abort-Script {
     }
     Write-Host ''
     Write-Host '   [입력 대기 중] 창을 닫으려면 엔터를 누르세요.' -ForegroundColor Yellow
-    [void](Read-Host '   엔터')
+    [void](Read-Line '   엔터')
     exit 0
 }
 
@@ -256,7 +267,7 @@ function Ask-Value {
     if ($Notes) { Write-Host ''; foreach ($n in $Notes) { Write-Host ('   ' + $n) -ForegroundColor DarkGray } }
     Write-Host ''
     Write-Host '   [입력 대기 중] 입력한 뒤 엔터를 누르세요.' -ForegroundColor Yellow
-    return (Read-Host ('   ' + $Label))
+    return (Read-Line ('   ' + $Label))
 }
 
 # ══════════════════════════════════════════════════════════════
