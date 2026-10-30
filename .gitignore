@@ -5,3 +5,11 @@
 tsapi.dat
 hosts.txt
 ssh-remote-close.xml
+
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.runtime/
+build/
+dist/

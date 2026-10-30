@@ -1,126 +1,124 @@
 # ssh-remote-tools
 
-Windows PC 두 대를 **포트포워딩 없이** SSH 로 연결하는 도구.
-`.cmd` 하나를 더블클릭하면 끝이다 — 웹 버전은 브라우저에 조작 화면이 뜨고,
-TUI 버전은 방향키로 조작하는 콘솔 화면이 뜬다. 설치부터 접속까지 그 안에서 끝난다.
+Windows와 Ubuntu에서 **자기 Tailscale 계정의 두 PC를 코드 하나로 등록하고**, 메시지 또는
+일반 OpenSSH로 연결하는 공통 CLI입니다. 별도 중계 서버·공인 IP 공유·포트 포워딩이 필요 없습니다.
 
-- 공유기 설정, 공인 IP, DDNS 필요 없음
-- 브라우저가 열리지 않음. 모든 과정이 터미널 안에서 진행됨
-- 22번 포트는 인터넷이 아니라 Tailscale 망에만, 그것도 **정해진 시간 동안만** 열림
+기존 Windows 웹/TUI는 [legacy 사용법](docs/legacy-windows.md)에 보존했습니다.
+새 공통 CLI의 핵심은 `ssh_remote_tools` Python 패키지이며 codex-bridge에서도 재사용합니다.
 
-## 왜 포트포워딩이 아닌가
+## 시작
 
-한국 가정용 회선은 상당수가 CGNAT 이라 공유기 WAN 에도 사설 IP 가 잡힌다.
-이 경우 공유기에서 22번을 포워딩해도 **외부에서 도달할 방법 자체가 없다.**
-공유기 상태 페이지의 WAN IP 가 `10.x` / `172.16~31.x` / `100.64~127.x` 중 하나면 그 케이스다.
+1. 두 PC에 Python 3.11+와 [Tailscale](https://tailscale.com/download)을 설치합니다.
+2. **같은 Tailscale 사용자 계정**으로 로그인합니다. 다른 사용자 공유·태그 기기는 현재 지원하지 않습니다.
+3. 두 PC에서 설치합니다.
 
-공인 IP 가 있더라도 22번을 인터넷에 그대로 열면 몇 시간 안에 브루트포스 스캔이 들어온다.
-Tailscale 은 두 PC 를 같은 가상 네트워크에 묶어 이 문제를 통째로 우회한다.
+Ubuntu:
 
-## 요구사항
+```bash
+git clone https://github.com/parktune/ssh-remote-tools.git
+cd ssh-remote-tools
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/srt doctor
+```
 
-- Windows 10 / 11
-- 관리자 권한 (스크립트가 UAC 승인을 스스로 요청한다)
-- Tailscale 계정 하나 — 양쪽이 아니라 **한 사람만** 있으면 된다
+Windows PowerShell:
 
-## 두 가지 실행 방식
+```powershell
+git clone https://github.com/parktune/ssh-remote-tools.git
+cd ssh-remote-tools
+py -3 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
+.venv\Scripts\srt.exe doctor
+```
 
-| | 실행 파일 | 조작 |
-|---|---|---|
-| **웹 (권장)** | `setup-remote-web.cmd` | 브라우저에 뜨는 화면에서 버튼으로. 접속받기 열기/닫기, 상대 목록, 키·초대 링크 발급 전부 클릭 |
-| TUI | `setup-remote-tui.cmd` | 콘솔에서 방향키로. 단일 파일이라 이것 하나만 전달해도 된다 |
+이후 Ubuntu는 `.venv/bin/srt`, Windows는 `.venv\Scripts\srt.exe`를 사용합니다.
+`remote-tools.sh` / `remote-tools.cmd`도 같은 CLI 실행기입니다.
 
-두 버전은 같은 방화벽 규칙과 예약 작업 이름을 쓰므로 섞어 써도 된다.
-아래 설명은 공통 개념이고, 웹 버전에서는 각 단계가 화면의 버튼 하나에 대응한다.
+## 코드 하나로 양방향 연결
 
-## 사용법
+두 PC에서 수신 프로세스를 각각 실행한 채로 둡니다.
 
-### 1. 키를 나눠주는 쪽 (tailnet 주인)
+```bash
+srt serve
+```
 
-`setup-remote-tui.cmd` 실행 → 첫 화면에서 **친구에게 줄 인증 키 발급**
+화면에 `XXXX-XXXX-XXXX-XXXX` 형태의 **16자, 80비트 랜덤 코드**가 표시됩니다.
+두 코드 중 A의 코드 하나를 B에 전달한 뒤, B의 **다른 터미널**에서 실행합니다.
 
-처음 한 번은 Tailscale API 액세스 토큰을 물어본다.
-[admin console 의 Keys 페이지](https://login.tailscale.com/admin/settings/keys)에서 `Generate access token` 으로 만든다.
-**웹을 거치는 것은 이 한 번뿐이다.** 이후로는 스크립트가 API 를 호출해 키를 직접 발급한다.
+```bash
+srt connect
+# A의 코드를 비표시 입력. 5분 내 한 번만 사용 가능.
+srt peers
+srt ping <A의 이름>
+srt message <A의 이름> "hello"
+```
 
-발급된 1회용 키가 화면에 뜨고 클립보드에도 복사된다. 붙여넣기(`Ctrl+V`)로 그대로 상대에게 보내면 된다.
+A에서:
 
-> **화면이 멈춘 것처럼 보인다면**
-> 마우스로 긁을 필요가 없다. 키는 이미 클립보드에 있다.
-> Windows 콘솔은 QuickEdit 모드가 기본이라, 창 안을 클릭하거나 드래그하면 선택 모드로 들어가면서 프로그램 출력을 막는다. 죽은 것이 아니다.
-> **`Enter`** 를 누르면 선택 영역이 복사되며 빠져나오고, **`Esc`** 는 복사 없이 빠져나온다.
-> 키 화면에서 `c` 를 누르면 클립보드에 다시 복사하고, `s` 를 누르면 바탕화면에 텍스트 파일로 저장한다.
+```bash
+srt inbox
+srt peers
+srt message <B의 이름> "hello received"
+```
 
-### 2. 접속을 받는 쪽 (원격 지원을 받을 PC)
+단 한 번의 등록으로 **A→B, B→A 메시지 자격을 모두 교환**합니다. 양쪽 수신 프로세스는 계속
+실행되어야 합니다. 표준 포트는 TCP 43123이며 Tailscale 주소 하나에만 바인딩합니다.
+방화벽이 이 포트를 막으면 [설정 가이드](docs/setup.md)에 따라 Tailscale 인터페이스에서만 허용합니다.
 
-`setup-remote-tui.cmd` 실행 → **이 PC 로 접속을 받는다** → 개방 시간 선택 → 받은 키 붙여넣기
+## SSH는 명시적으로 허용
 
-이쪽은 웹에 들어갈 일이 전혀 없다. Tailscale 계정도 필요 없다.
-끝나면 상대에게 알려줄 `ssh 계정@100.x.x.x` 가 화면에 뜬다.
+메시지 연결만으로 쉘을 열거나 명령을 실행하지 않습니다. OpenSSH Server가 준비된 A에서:
 
-### 3. 접속하는 쪽
+```bash
+srt serve --allow-ssh
+```
 
-`setup-remote-tui.cmd` 실행 → **다른 PC 에 접속만 한다** → 키 붙여넣기
+B에서 A의 새 코드를 사용합니다.
 
-연결되면 같은 망의 PC 목록이 뜬다. 번호를 고르면 그 자리에서 `ssh` 가 실행된다.
-상대 계정명은 한 번 입력하면 기억한다.
+```bash
+srt connect --ssh
+srt ssh <A의 이름>
+```
 
-## 보안 모델
+B의 ed25519 공개키만 A의 **현재 로컬 OS 계정**에 등록합니다. 개인키는 B에 남고,
+SSH 호스트 공개키는 pairing 응답으로 받아 고정합니다. `StrictHostKeyChecking=yes`이며,
+자동 등록한 키에는 agent/X11/port forwarding 금지 옵션을 붙입니다.
+Tailscale SSH 기능에 의존하지 않으므로 일반 OpenSSH가 있는 Windows·Ubuntu에 같은 방식입니다.
+Windows 자동 SSH 키 등록은 **비관리자 로컬 계정**을 대상으로 합니다. 관리자 그룹의 기본
+`administrators_authorized_keys` 정책은 자동 변경하지 않습니다. [설정 가이드](docs/setup.md)를 읽으세요.
 
-| 항목 | 동작 |
-|---|---|
-| 22번 인바운드 | `100.64.0.0/10` (Tailscale 대역) 에서만 허용. 인터넷·공용 와이파이에서 도달 불가 |
-| 개방 수명 | 1 / 4 / 12시간 중 선택. 만료되면 예약 작업이 방화벽을 자동으로 닫는다 |
-| 만료 집행 | `SYSTEM` 권한 예약 작업. 창을 닫아도, 로그아웃해도, 재부팅해도 유지된다 |
-| 만료 시 PC 가 꺼져 있으면 | `StartWhenAvailable` 로 다음 부팅 직후 집행된다 |
-| 즉시 차단 | 종료 화면에서 언제든 지금 닫을 수 있다 |
-| 인증 키 | 1회용. 한 번 쓰면 재사용 불가 |
-| API 토큰 | DPAPI `CurrentUser` 로 암호화해 `%LOCALAPPDATA%\ssh-remote\tsapi.dat` 에 저장. 파일을 복사해도 다른 계정·다른 PC 에서는 풀리지 않는다 |
-| SSH 인증 | Windows 로그인 암호 (PIN 은 사용 불가) |
+## 폐기와 수신함
 
-### 이 도구가 해결하지 않는 것
+```bash
+srt revoke <상대 이름>   # 이 PC의 상대 토큰과 이 도구가 등록한 상대 SSH 키 제거
+srt ack <message-id>    # 처리 확인
+srt prune               # 확인한 메시지만 삭제
+```
 
-- **tailnet 소속은 남는다.** 만료되면 SSH 만 닫히고 기기는 tailnet 에 등록된 채로 남는다. 완전히 끊으려면 [admin console](https://login.tailscale.com/admin/machines) 에서 기기를 삭제하거나 Tailscale 을 제거해야 한다.
-- **tailnet ACL 은 기본이 전부 허용이다.** 개방 시간 중에는 tailnet 의 다른 기기도 접근할 수 있다.
-- **tailnet 주인 계정이 열쇠다.** 그 계정에 2FA 를 걸어 두는 편이 좋다.
-- SSH 는 암호 인증이다. 공개키 인증으로 바꾸는 기능은 없다.
+연결을 완전히 폐기하려면 양쪽에서 revoke합니다. SSH 세션 종료, Tailscale 기기 삭제,
+다른 도구가 등록한 SSH 키 제거는 수행하지 않습니다. 이름이 겹치면 `peers`의 node ID를 선택합니다.
 
-상시 접근이 아니라는 점을 **접속을 받는 쪽이 알고 있는지** 확인하고 쓰는 것이 좋다.
+## 보안과 범위
 
-## 동작 방식
+- 네트워크 가입은 Tailscale이 담당합니다. pairing code가 Tailscale 로그인·ACL을 우회하지 않습니다.
+- 각 사용자가 자기 계정의 망을 사용합니다. 프로젝트 주인의 공용 tailnet에 모두 가입시키지 않습니다.
+- 공인 IP를 **사용자가 직접 공유할 필요가 없다**는 의미입니다. 인증된 피어에게 실제 네트워크 주소를 숨기는 익명화 기능은 아닙니다.
+- discovery에 코드를 평문으로 보내지 않으며 랜덤 challenge의 HMAC으로 상대를 확인합니다.
+  PAKE가 아니므로 짧은 숫자 코드를 지원하지 않습니다. 상세 위협 모델은 [SECURITY.md](SECURITY.md)에 있습니다.
+- 저장소 소스에는 비밀을 넣지 않습니다. 토큰·개인키는 소유자 전용 로컬 상태 디렉터리에 보관합니다.
+- 수신 메시지는 DB에만 저장하며 원격 명령으로 실행하지 않습니다. 파일 전송·LLM 실행은 이 패키지의 역할이 아닙니다.
+- 기존 Windows legacy 스크립트는 별도 구현입니다. 새 CLI 실행은 시스템 SSH 설정·광역 방화벽 규칙·tailnet ACL을 자동 변경하지 않습니다.
 
-1. OpenSSH 서버 설치 — GitHub 공식 배포판 zip → winget → Windows 기능(FoD) 순으로 시도
-2. `sshd` 서비스 시작 및 자동 실행 등록
-3. `netsh` 로 22번을 Tailscale 대역에만 개방, 만료 시각에 닫는 예약 작업 등록
-4. Tailscale 설치 — 공식 MSI → winget
-5. `tailscale up --authkey=...` 로 연결 (브라우저를 열지 않는 경로)
-6. 피어 목록에서 골라 `ssh` 실행
+## 검증
 
-접속만 하는 역할을 고르면 1~3 을 건너뛰고 SSH 클라이언트만 확인한다.
-이전에 이 PC 를 서버로 쓴 적이 있으면 그 방화벽 규칙과 예약 작업을 지운다.
+```bash
+python -m unittest discover -s tests -v
+```
 
-## 구현 노트
+로컬 HTTP 통합 테스트에서 한 코드 등록·양방향 메시지·토큰 폐기·중복 방지·SSH host-key pinning을
+검증합니다. GitHub Actions는 Windows/Ubuntu × Python 3.11/3.13을 실행합니다.
+이 개발 PC에는 Tailscale이 설치되어 있지 않아 **실제 두 호스트/NAT 왕복은 아직 검증 전**입니다.
+CI가 통과해도 실제 OS 서비스 설치·방화벽·tailnet 연결의 성공을 뜻하지 않습니다.
 
-- **`.cmd` 는 CRLF 여야 한다.** `cmd.exe` 는 LF 뿐인 배치 파일의 `if ... (` 블록을 제대로 파싱하지 못하고, 더블클릭하면 창이 즉시 닫힌다. `.gitattributes` 에서 `*.cmd -text` 로 EOL 변환을 막아 clone 이든 raw 다운로드든 바이트가 유지되게 했다.
-- 파일 하나에 배치 헤더와 PowerShell 본문이 같이 들어 있다. 헤더가 `#PSSTART` 마커 뒤를 UTF-8 로 읽어 `Invoke-Expression` 한다. PowerShell 프로세스를 한 번만 띄우기 위한 구조다.
-- 로캘 의존 출력은 파싱하지 않는다. 방화벽 규칙은 상태를 조회하는 대신 항상 지웠다 새로 만들고, 예약 작업은 `schtasks` 의 `/ST /SD` 대신 XML 의 `StartBoundary`(ISO 8601)를 쓴다. 한국어 Windows 에서 깨지지 않게 하기 위함이다.
-- CIM 기반 cmdlet(`Get-NetTCPConnection`, `NetSecurity`, `Get-WindowsCapability` 와일드카드 조회)은 모듈 로딩만으로 초 단위를 먹어서 쓰지 않는다.
-- TUI 의 상자 폭은 `.Length` 가 아니라 렌더링 폭으로 계산한다. 한글은 콘솔에서 두 칸을 차지한다.
-- 방향키를 읽을 수 없는 환경에서는 번호 입력 메뉴로 자동 전환된다.
-- `RawUI.ReadKey` 는 반드시 `AllowCtrlC` 와 함께 부른다. 이 옵션이 없으면 Ctrl+C — 그리고 터미널이 복사로 가로채지 않은 Ctrl+Shift+C 도 같은 `0x03` 으로 도착한다 — 가 호스트의 break 로 처리되어 스크립트가 그 자리에서 죽는다. 지금은 중단 요청으로 받아, 방화벽을 이미 열었다면 닫을 기회를 주고 끝낸다.
-- `Read-Host` 도 같은 이유로 죽는다. 텍스트 입력은 전부 `Read-Line` 을 거치고, 그 안에서 줄을 읽는 동안만 `[Console]::TreatControlCAsInput` 을 켰다가 `finally` 로 되돌린다. 원래 값으로 복구해야 뒤이어 실행되는 `ssh` 가 Ctrl+C 를 정상적으로 받는다.
-- **OpenSSH 는 설치 경로에 따라 서로 다른 이름의 광역 규칙을 만든다.** Windows 기능(FoD)은 `OpenSSH-Server-In-TCP`, winget/MSI 는 `OpenSSH SSH Server (sshd)` — 둘 다 `RemoteIP=Any` 다. 남겨 두면 대역 제한이 무의미해지므로 개방할 때마다 둘 다 끄고, 웹 버전은 CIM 조회로 22번을 여는 그 밖의 규칙까지 쓸어서 끈다.
-- 웹 버전의 로컬 서버는 `127.0.0.1` 에만 바인딩하고, 실행마다 새로 만드는 논스를 모든 API 요청의 `X-Auth` 헤더로 요구한다. 커스텀 헤더 요구는 타 사이트발 요청을 브라우저 CORS 사전 검사에서 끊는다. 방화벽을 여닫는 API 라 이 두 가지가 없으면 로컬 웹페이지 하나가 이 PC 를 열 수 있게 된다.
-- `lib/*.ps1` 은 **UTF-8 BOM** 으로 저장한다. PowerShell 5.1 은 BOM 없는 파일을 ANSI 로 읽어서 한글 주석과 문자열이 깨지고, 엉뚱한 곳에서 파서 오류가 난다.
-
-## 파일
-
-| 경로 | 설명 |
-|---|---|
-| `setup-remote-web.cmd` | 웹 버전 실행 파일. `lib/`·`web/` 와 한 세트로 다닌다 |
-| `lib/*.ps1` | 웹 버전 로직 — 설치, 방화벽·예약 작업, Tailscale API, 로컬 HTTP 서버 |
-| `web/*` | 브라우저 화면 (HTML/CSS/JS) |
-| `setup-remote-tui.cmd` | TUI 버전. 이 파일 하나로 완결이라 단일 파일 전달용으로도 쓴다 |
-
-상대에게 전달할 때는 GitHub 의 **Code → Download ZIP** 으로 통째로 주면 된다.
-파일 하나만 보내고 싶으면 `setup-remote-tui.cmd` 를 보낸다.
+Apache-2.0.
